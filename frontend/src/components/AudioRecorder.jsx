@@ -21,6 +21,7 @@ export default function AudioRecorder({ onRecordingComplete, isTranscribing }) {
   // Web Speech API refs for high-fidelity fallback transcription
   const recognitionRef = useRef(null);
   const localTranscriptRef = useRef('');
+  const isRecordingRef = useRef(false);
 
   // Clean up on unmount
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function AudioRecorder({ onRecordingComplete, isTranscribing }) {
       audioContextRef.current.close();
     }
     if (recognitionRef.current) {
+      isRecordingRef.current = false;
       recognitionRef.current.stop();
     }
   };
@@ -94,6 +96,7 @@ export default function AudioRecorder({ onRecordingComplete, isTranscribing }) {
       // 5. Start everything
       recorder.start();
       setIsRecording(true);
+      isRecordingRef.current = true;
       startTimeRef.current = Date.now();
       setRecordingTime(0);
 
@@ -113,6 +116,7 @@ export default function AudioRecorder({ onRecordingComplete, isTranscribing }) {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      isRecordingRef.current = false;
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
@@ -210,7 +214,20 @@ export default function AudioRecorder({ onRecordingComplete, isTranscribing }) {
     };
 
     recognition.onerror = (e) => {
+      if (e.error === 'no-speech') return; // Silence warning bypass
       console.error('Speech recognition error:', e.error);
+    };
+
+    recognition.onend = () => {
+      // If still recording, keep the session alive bypassing browser thresholds
+      if (isRecordingRef.current) {
+        try {
+          recognition.start();
+          console.log('🔄 Web Speech engine auto-restarted to maintain stream.');
+        } catch (err) {
+          console.error('Failed to restart speech engine:', err);
+        }
+      }
     };
 
     recognitionRef.current = recognition;
