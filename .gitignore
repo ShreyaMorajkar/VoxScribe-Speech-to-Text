@@ -1,0 +1,34 @@
+# Monorepo Node Modules
+node_modules/
+**/node_modules/
+
+# Server Environment variables (containing credentials)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+
+# Local Database storage & physical uploads
+backend/data/db.json
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Production compilation bundles
+dist/
+build/
+frontend/dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# System & Editor configs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env.example.local
