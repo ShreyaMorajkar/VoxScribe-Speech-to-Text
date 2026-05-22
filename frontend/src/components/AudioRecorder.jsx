@@ -82,15 +82,18 @@ export default function AudioRecorder({ onRecordingComplete, isTranscribing }) {
       };
 
       recorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const duration = (Date.now() - startTimeRef.current) / 1000;
-        
-        onRecordingComplete(
-          audioBlob, 
-          localTranscriptRef.current.trim(), 
-          duration
-        );
-        stopStreamsAndVisualizer();
+        // Wait 500ms to allow final SpeechRecognition results to flush into localTranscriptRef
+        setTimeout(() => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const duration = (Date.now() - startTimeRef.current) / 1000;
+          
+          onRecordingComplete(
+            audioBlob, 
+            localTranscriptRef.current.trim(), 
+            duration
+          );
+          stopStreamsAndVisualizer();
+        }, 500);
       };
 
       // 5. Start everything
@@ -114,9 +117,17 @@ export default function AudioRecorder({ onRecordingComplete, isTranscribing }) {
   // Stop Recording
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
       setIsRecording(false);
       isRecordingRef.current = false;
+      
+      // Stop the media recorder
+      mediaRecorderRef.current.stop();
+      
+      // Stop speech recognition immediately to flush remaining buffer
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
