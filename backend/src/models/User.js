@@ -9,6 +9,9 @@ const UserSchema = new mongoose.Schema({
   password: { type: String },
   avatar: { type: String },
   googleId: { type: String },
+  isVerified: { type: Boolean, default: false },
+  otpCode: { type: String },
+  otpExpires: { type: Date },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -32,11 +35,37 @@ function writeLocalData(data) {
   fs.writeFileSync(localDbPath, JSON.stringify(data, null, 2));
 }
 
+// Attach a helper .save() mock function to local objects to mimic Mongoose syntax
+function wrapLocalUser(user) {
+  if (!user) return null;
+  
+  // Attach save helper
+  user.save = async function() {
+    const fileData = readLocalData();
+    const index = fileData.users.findIndex(u => u._id === user._id);
+    if (index !== -1) {
+      const cleanUser = { ...user };
+      delete cleanUser.save; // Keep database file clean of function blocks
+      fileData.users[index] = cleanUser;
+      writeLocalData(fileData);
+    }
+  };
+  return user;
+}
+
 // Local mock model that matches Mongoose interface we will use
 const LocalUser = {
-  async findOne({ email }) {
+  async findOne(query) {
     const data = readLocalData();
-    return data.users.find(u => u.email.toLowerCase() === email.toLowerCase()) || null;
+    let user = null;
+    
+    if (query._id) {
+      user = data.users.find(u => u._id === query._id) || null;
+    } else if (query.email) {
+      user = data.users.find(u => u.email.toLowerCase() === query.email.toLowerCase()) || null;
+    }
+    
+    return wrapLocalUser(user);
   },
 
   async create(obj) {
@@ -44,14 +73,17 @@ const LocalUser = {
     if (data.users.some(u => u.email.toLowerCase() === obj.email.toLowerCase())) {
       throw new Error('User already exists');
     }
+    
     const newRecord = {
       _id: Math.random().toString(36).substring(2, 9),
+      isVerified: false, // Default to unverified for local signup
       ...obj,
       createdAt: new Date().toISOString()
     };
+    
     data.users.push(newRecord);
     writeLocalData(data);
-    return newRecord;
+    return wrapLocalUser(newRecord);
   }
 };
 

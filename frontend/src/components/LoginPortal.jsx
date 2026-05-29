@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { Mail, Lock, User, ArrowRight, Activity, AlertCircle, ShieldAlert, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Activity, AlertCircle, ShieldAlert, Sparkles, CheckCircle2, ArrowLeft, KeyRound, RefreshCw } from 'lucide-react';
 
 const AUTH_API_URL = 'http://localhost:5000/api/auth';
 
@@ -13,11 +13,18 @@ export default function LoginPortal({ onLoginSuccess }) {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // OTP Verification States
+  const [showOtpScreen, setShowOtpScreen] = useState(false);
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpValues, setOtpValues] = useState(['', '', '', '', '', '']);
+  const [resendTimer, setResendTimer] = useState(0);
+  const otpInputRefs = useRef([]);
+
   // Google OAuth Config State
   const [googleClientId, setGoogleClientId] = useState('');
   const googleBtnRef = useRef(null);
 
-  // Fetch Google Client ID from backend config on mount
+  // Fetch Google Client ID on mount
   useEffect(() => {
     const fetchConfig = async () => {
       try {
@@ -32,9 +39,9 @@ export default function LoginPortal({ onLoginSuccess }) {
     fetchConfig();
   }, []);
 
-  // Initialize official Google Identity Services when Client ID is available
+  // Initialize Google Identity Services
   useEffect(() => {
-    if (!googleClientId) return;
+    if (!googleClientId || showOtpScreen) return;
 
     const initializeGoogleSignIn = () => {
       if (window.google && window.google.accounts) {
@@ -46,7 +53,6 @@ export default function LoginPortal({ onLoginSuccess }) {
             cancel_on_tap_outside: true
           });
 
-          // Render the official native Google Sign-In button
           if (googleBtnRef.current) {
             window.google.accounts.id.renderButton(googleBtnRef.current, {
               type: 'standard',
@@ -57,23 +63,27 @@ export default function LoginPortal({ onLoginSuccess }) {
               width: 320
             });
           }
-
-          // Optional: Display One Tap Prompt for an even more integrated experience!
-          window.google.accounts.id.prompt();
-
         } catch (err) {
-          console.error('Failed to initialize Google Sign-In SDK:', err);
+          console.error('Failed to initialize Google Sign-In:', err);
         }
       } else {
-        // Retry in 300ms if script is still loading asynchronously
         setTimeout(initializeGoogleSignIn, 300);
       }
     };
 
     initializeGoogleSignIn();
-  }, [googleClientId, isSignUp]); // Re-render when client ID changes or switching tabs
+  }, [googleClientId, isSignUp, showOtpScreen]);
 
-  // Callback triggered when user completes authenticating in the official Google Prompt
+  // Resend Timer Countdown
+  useEffect(() => {
+    if (resendTimer > 0) {
+      const interval = setInterval(() => {
+        setResendTimer(prev => prev - 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [resendTimer]);
+
   const handleGoogleCredentialResponse = async (googleResponse) => {
     setError('');
     setLoading(true);
@@ -120,22 +130,138 @@ export default function LoginPortal({ onLoginSuccess }) {
       const response = await axios.post(endpoint, payload);
 
       if (response.data?.success) {
-        setSuccess(isSignUp ? 'Account created successfully! Logging you in...' : 'Logged in successfully!');
-        
-        // Let user see success state for a brief moment for premium UX feel
-        setTimeout(() => {
-          onLoginSuccess(response.data.user, response.data.token);
-        }, 1000);
+        if (response.data.needsVerification) {
+          // Switch to OTP Code entry view
+          setOtpEmail(response.data.email);
+          setSuccess(response.data.message);
+          setOtpValues(['', '', '', '', '', '']);
+          setTimeout(() => {
+            setShowOtpScreen(true);
+            setSuccess('');
+          }, 1500);
+        } else {
+          setSuccess('Logged in successfully!');
+          setTimeout(() => {
+            onLoginSuccess(response.data.user, response.data.token);
+          }, 1000);
+        }
       }
     } catch (err) {
       console.error('Auth error:', err);
-      setError(err.response?.data?.message || 'Authentication failed. Please verify your credentials.');
+      if (err.response?.data?.needsVerification) {
+        // Handle unverified user trying to sign in
+        setOtpEmail(err.response.data.email);
+        setError(err.response.data.message);
+        setOtpValues(['', '', '', '', '', '']);
+        setTimeout(() => {
+          setShowOtpScreen(true);
+          setError('');
+        }, 2000);
+      } else {
+        setError(err.response?.data?.message || 'Authentication failed. Please verify your credentials.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Dev mode sandbox bypass if no client ID is configured yet
+  // Handle individual OTP box inputs with caret auto-shifting
+  const handleOtpChange = (index, val) => {
+    if (isNaN(val) && val !== '') return; // Accept only numbers
+
+    const newValues = [...otpValues];
+    newValues[index] = val.slice(-1); // Only keep last character typed
+    setOtpValues(newValues);
+
+    // Auto focus next box if typed
+    if (val !== '' && index < 5 && otpInputRefs.current[index + 1]) {
+      otpInputRefs.current[index + 1].focus();
+    }
+  };
+
+  // Handle keyboard backspaces to reverse caret focus
+  const handleOtpKeyDown = (index, e) => {
+    if (e.key === 'Backspace' && otpValues[index] === '' && index > 0 && otpInputRefs.current[index - 1]) {
+      otpInputRefs.current[index - 1].focus();
+    }
+  };
+
+  // Support direct copy paste of the complete 6-digit code!
+  const handleOtpPaste = (e) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').trim();
+    if (!/^\d{6}$/.test(pastedData)) return; // Valid only if 6 numeric digits
+
+    const chars = pastedData.split('');
+    setOtpValues(chars);
+    // Focus the final box
+    if (otpInputRefs.current[5]) {
+      otpInputRefs.current[5].focus();
+    }
+  };
+
+  // Submit OTP Verification Code
+  const handleVerifyOTP = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    const otpCode = otpValues.join('');
+    if (otpCode.length < 6) {
+      setError('Please fill in the complete 6-digit verification code.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await axios.post(`${AUTH_API_URL}/verify-otp`, {
+        email: otpEmail,
+        otpCode
+      });
+
+      if (response.data?.success) {
+        setSuccess('Verification successful! Access granted.');
+        setTimeout(() => {
+          onLoginSuccess(response.data.user, response.data.token);
+        }, 1000);
+      }
+    } catch (err) {
+      console.error('OTP verify error:', err);
+      setError(err.response?.data?.message || 'OTP verification failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Resend fresh OTP
+  const handleResendOTP = async () => {
+    if (resendTimer > 0) return;
+
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    try {
+      const response = await axios.post(`${AUTH_API_URL}/resend-otp`, {
+        email: otpEmail
+      });
+
+      if (response.data?.success) {
+        setSuccess(response.data.message);
+        setResendTimer(60); // Block resend for 60 seconds
+        setOtpValues(['', '', '', '', '', '']);
+        if (otpInputRefs.current[0]) {
+          otpInputRefs.current[0].focus();
+        }
+      }
+    } catch (err) {
+      console.error('OTP resend error:', err);
+      setError(err.response?.data?.message || 'Failed to resend verification code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Dev mode sandbox bypass
   const handleSandboxBypass = () => {
     onLoginSuccess({
       name: 'Sandbox Developer',
@@ -145,6 +271,120 @@ export default function LoginPortal({ onLoginSuccess }) {
     }, 'mock_token_123456');
   };
 
+  // RENDER OTP SCREEN
+  if (showOtpScreen) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#080b11] relative overflow-hidden px-4 py-12">
+        {/* Cinematic Glowing Background Blobs */}
+        <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] bg-cyan-500/10 rounded-full blur-[140px] pointer-events-none animate-pulse" />
+        <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] bg-indigo-500/10 rounded-full blur-[140px] pointer-events-none animate-pulse" style={{ animationDuration: '8s' }} />
+
+        <div className="w-full max-w-md relative z-10">
+          <div className="flex flex-col items-center mb-6 text-center">
+            <div className="relative flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-400 to-indigo-600 shadow-lg shadow-cyan-500/20 mb-4">
+              <KeyRound size={22} className="text-white animate-pulse" />
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-white font-['Outfit']">
+              Verify Your Email
+            </h1>
+            <p className="text-xs text-gray-400 mt-2 font-medium leading-relaxed max-w-[280px]">
+              We sent a 6-digit OTP code to: <br/>
+              <span className="text-cyan-400 font-bold">{otpEmail}</span>
+            </p>
+          </div>
+
+          <div className="glass-panel glass-panel-glow rounded-3xl p-8 relative overflow-hidden text-center">
+            <form onSubmit={handleVerifyOTP} className="space-y-6">
+              {error && (
+                <div className="flex items-start text-left gap-2.5 text-xs text-red-400 bg-red-500/5 border border-red-500/10 p-3.5 rounded-xl w-full">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {success && (
+                <div className="flex items-start text-left gap-2.5 text-xs text-emerald-400 bg-emerald-500/5 border border-emerald-500/10 p-3.5 rounded-xl w-full">
+                  <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                  <span>{success}</span>
+                </div>
+              )}
+
+              {/* 6 Individual Code Inputs */}
+              <div className="flex items-center justify-between gap-2.5 my-6">
+                {otpValues.map((val, idx) => (
+                  <input
+                    key={idx}
+                    ref={el => otpInputRefs.current[idx] = el}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={1}
+                    value={val}
+                    onChange={(e) => handleOtpChange(idx, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                    onPaste={idx === 0 ? handleOtpPaste : undefined}
+                    className="w-12 h-12 bg-[#0d121f]/50 border border-white/5 rounded-xl text-center font-mono text-lg font-black text-cyan-400 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all duration-300"
+                    placeholder="-"
+                  />
+                ))}
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white rounded-xl py-3.5 text-sm font-bold shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/25 flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] transition-all duration-300 cursor-pointer disabled:opacity-50"
+              >
+                <span>{loading ? 'Verifying Code...' : 'Activate Workspace'}</span>
+                <ArrowRight size={16} />
+              </button>
+            </form>
+
+            <div className="flex flex-col items-center mt-6 space-y-4">
+              <div className="text-xs">
+                {resendTimer > 0 ? (
+                  <span className="text-gray-500">Resend code in {resendTimer}s</span>
+                ) : (
+                  <button
+                    onClick={handleResendOTP}
+                    disabled={loading}
+                    className="text-cyan-400 hover:text-cyan-300 font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+                    <span>Resend OTP Code</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="w-full border-t border-white/5 pt-4">
+                <button
+                  onClick={() => { setShowOtpScreen(false); setError(''); setSuccess(''); }}
+                  className="text-xs font-semibold text-gray-400 hover:text-white transition-all duration-200 inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Return to login page</span>
+                </button>
+              </div>
+            </div>
+            
+            {/* Sandbox Ethereal instructions */}
+            {!googleClientId && (
+              <div className="bg-amber-500/5 border border-amber-500/10 rounded-2xl p-4 text-left space-y-2 mt-4">
+                <div className="flex items-start gap-2 text-amber-400">
+                  <ShieldAlert size={14} className="shrink-0 mt-0.5" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider">Dev Sandbox Notice</span>
+                </div>
+                <p className="text-[10.5px] text-gray-400 leading-normal">
+                  OTP emails are generated using Ethereal sandbox. Copy the 6-digit code by **clicking the secure Ethereal preview link** printed in your **Node.js terminal logs**!
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // STANDARD LOGIN / SIGN UP RENDER
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#080b11] relative overflow-hidden px-4 py-12">
       {/* Cinematic Glowing Background Blobs */}
