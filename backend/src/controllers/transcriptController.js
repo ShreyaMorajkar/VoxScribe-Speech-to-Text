@@ -41,7 +41,7 @@ const transcribeAudio = async (req, res) => {
       try {
         const transcript = await aaiClient.transcripts.transcribe({
           audio: filePath,
-          speech_model: 'universal-2'
+          speech_models: ['universal-3-pro']
         });
         
         if (transcript.status === 'error') {
