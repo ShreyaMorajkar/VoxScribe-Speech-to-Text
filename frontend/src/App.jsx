@@ -9,16 +9,22 @@ import {
   CheckCircle2, 
   AlertTriangle,
   X,
-  Volume2
+  Volume2,
+  LogOut
 } from 'lucide-react';
 import AudioRecorder from './components/AudioRecorder';
 import FileUploader from './components/FileUploader';
 import TranscriptionDisplay from './components/TranscriptionDisplay';
 import HistoryList from './components/HistoryList';
+import LoginPortal from './components/LoginPortal';
 
 const API_BASE_URL = 'http://localhost:5000/api/transcriptions';
 
 export default function App() {
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('voxscribe_user');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [history, setHistory] = useState([]);
   const [activeTranscription, setActiveTranscription] = useState(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -30,13 +36,31 @@ export default function App() {
 
   // Fetch history on initial load
   useEffect(() => {
-    fetchHistory();
-  }, []);
+    if (user) {
+      fetchHistory();
+    }
+  }, [user]);
 
   const showToast = (message, type = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
   };
+
+  const handleLogout = () => {
+    localStorage.removeItem('voxscribe_user');
+    setUser(null);
+    showToast('Successfully signed out.', 'info');
+  };
+
+  const handleLoginSuccess = (userData) => {
+    localStorage.setItem('voxscribe_user', JSON.stringify(userData));
+    setUser(userData);
+    showToast(`Welcome to VoxScribe, ${userData.name}!`, 'success');
+  };
+
+  if (!user) {
+    return <LoginPortal onLoginSuccess={handleLoginSuccess} />;
+  }
 
   const fetchHistory = async () => {
     try {
@@ -221,7 +245,32 @@ export default function App() {
               </select>
             </div>
 
-            <div className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+            {user && (
+              <div className="flex items-center gap-3 bg-white/5 border border-white/5 rounded-xl px-3 py-1.5">
+                <img
+                  src={user.avatar}
+                  alt={user.name}
+                  className="w-6 h-6 rounded-full border border-white/10 bg-white/5"
+                />
+                <div className="hidden sm:flex flex-col text-left">
+                  <span className="text-[10px] font-bold text-gray-200 leading-tight truncate max-w-[100px]">
+                    {user.name}
+                  </span>
+                  <span className="text-[8px] text-gray-400 font-semibold leading-none">
+                    {user.method === 'google' ? 'Google Account' : 'Standard Session'}
+                  </span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="p-1 hover:bg-white/5 rounded-lg text-gray-400 hover:text-red-400 transition-all duration-200 cursor-pointer ml-1"
+                  title="Sign Out"
+                >
+                  <LogOut size={14} />
+                </button>
+              </div>
+            )}
+
+            <div className="hidden lg:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
               <Sparkles size={12} />
               <span>MERN Stack</span>
             </div>
