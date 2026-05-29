@@ -40,7 +40,8 @@ const transcribeAudio = async (req, res) => {
       console.log(`🎙️ [AssemblyAI] Transcribing: ${originalFilename}`);
       try {
         const transcript = await aaiClient.transcripts.transcribe({
-          audio: filePath
+          audio: filePath,
+          speech_model: 'universal-2'
         });
         
         if (transcript.status === 'error') {

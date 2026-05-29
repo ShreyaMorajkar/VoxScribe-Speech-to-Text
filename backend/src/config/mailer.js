@@ -22,6 +22,9 @@ async function getTransporter() {
       auth: {
         user: smtpUser,
         pass: smtpPass
+      },
+      tls: {
+        rejectUnauthorized: false
       }
     });
     isEthereal = false;
