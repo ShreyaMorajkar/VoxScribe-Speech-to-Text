@@ -48,12 +48,16 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('voxscribe_user');
+    localStorage.removeItem('voxscribe_token');
     setUser(null);
     showToast('Successfully signed out.', 'info');
   };
 
-  const handleLoginSuccess = (userData) => {
+  const handleLoginSuccess = (userData, token) => {
     localStorage.setItem('voxscribe_user', JSON.stringify(userData));
+    if (token) {
+      localStorage.setItem('voxscribe_token', token);
+    }
     setUser(userData);
     showToast(`Welcome to VoxScribe, ${userData.name}!`, 'success');
   };

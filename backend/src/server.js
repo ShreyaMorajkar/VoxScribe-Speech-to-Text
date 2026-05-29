@@ -24,6 +24,8 @@ if (!fs.existsSync(uploadsPath)) {
 app.use('/uploads', express.static(uploadsPath));
 
 // API Routes
+const authRoutes = require('./routes/authRoutes');
+app.use('/api/auth', authRoutes);
 app.use('/api/transcriptions', transcriptRoutes);
 
 // Server Status Check
