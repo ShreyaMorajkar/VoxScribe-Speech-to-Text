@@ -76,9 +76,10 @@ async function sendOTPEmail(email, name, otpCode) {
   // 1. Check if Resend API is configured
   if (process.env.RESEND_API_KEY) {
     console.log('⚡ [Mailer] Delivering real email via Resend REST API to:', email);
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'VoxScribe <onboarding@resend.dev>';
     try {
       const response = await axios.post('https://api.resend.com/emails', {
-        from: 'VoxScribe <onboarding@resend.dev>',
+        from: fromEmail,
         to: email,
         subject: `[VoxScribe] Verify your email address (OTP: ${otpCode})`,
         html: htmlContent
